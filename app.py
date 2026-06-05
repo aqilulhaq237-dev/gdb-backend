@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # ==================== KONFIGURASI CORS ====================
 # HANYA SATU deklarasi CORS
-CORS(app, origins=["*"], supports_credentials=True)
+CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
 
 # ==================== KONFIGURASI DATABASE ====================
 # Gunakan environment variable untuk production, fallback ke local
