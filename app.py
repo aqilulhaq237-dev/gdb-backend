@@ -1028,6 +1028,53 @@ def get_riwayat_pagination():
     
     return jsonify({'status': 'success', 'data': result, 'total': total, 'total_pages': total_pages, 'current_page': page})
 
+# ==================== ENDPOINT INIT DATABASE ====================
+
+@app.route('/api/init-db', methods=['GET'])
+def init_database():
+    try:
+        # Buat semua tabel
+        db.create_all()
+        
+        # Cek apakah user admin sudah ada
+        admin = User.query.filter_by(username='admin').first()
+        if not admin:
+            # Insert user default
+            users = [
+                User(username='admin', password='admin123', role='Admin', nama_lengkap='Administrator', email='admin@gdb.com'),
+                User(username='ketua', password='ketua123', role='Ketua', nama_lengkap='Ketua GDB', email='ketua@gdb.com'),
+                User(username='bendahara', password='bendahara123', role='Bendahara', nama_lengkap='Bendahara GDB', email='bendahara@gdb.com'),
+                User(username='anggota', password='anggota123', role='Anggota Umum', nama_lengkap='Anggota GDB', email='anggota@gdb.com'),
+            ]
+            for u in users:
+                db.session.add(u)
+            db.session.commit()
+        
+        # Cek katalog biaya
+        katalog = KatalogBiaya.query.first()
+        if not katalog:
+            biaya_list = [
+                KatalogBiaya(nama_biaya='Konsumsi', biaya_minimal=100000, biaya_maksimal=10000000, deskripsi_biaya='Biaya untuk konsumsi, snack, makan siang'),
+                KatalogBiaya(nama_biaya='Transportasi', biaya_minimal=50000, biaya_maksimal=5000000, deskripsi_biaya='Biaya transportasi, bensin, parkir, tol'),
+                KatalogBiaya(nama_biaya='Perlengkapan', biaya_minimal=100000, biaya_maksimal=20000000, deskripsi_biaya='Biaya perlengkapan acara'),
+                KatalogBiaya(nama_biaya='Dokumentasi', biaya_minimal=50000, biaya_maksimal=5000000, deskripsi_biaya='Biaya dokumentasi foto dan video'),
+                KatalogBiaya(nama_biaya='Honorarium', biaya_minimal=100000, biaya_maksimal=10000000, deskripsi_biaya='Biaya honorarium pembicara, panitia'),
+                KatalogBiaya(nama_biaya='Publikasi', biaya_minimal=50000, biaya_maksimal=5000000, deskripsi_biaya='Biaya publikasi, cetak spanduk, desain'),
+            ]
+            for b in biaya_list:
+                db.session.add(b)
+            db.session.commit()
+        
+        user_count = User.query.count()
+        return jsonify({
+            'status': 'success',
+            'message': 'Database berhasil diinisialisasi',
+            'user_count': user_count,
+            'users': ['admin', 'ketua', 'bendahara', 'anggota']
+        })
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+    
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
     with app.app_context():
