@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # ==================== KONFIGURASI CORS ====================
 # HANYA SATU deklarasi CORS
-CORS(app, origins=["https://gdb-frontend-zeta.vercel.app"], supports_credentials=True)
+CORS(app)
 
 # ==================== KONFIGURASI DATABASE ====================
 # Gunakan environment variable untuk production, fallback ke local
