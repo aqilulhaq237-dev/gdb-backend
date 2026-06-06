@@ -16,7 +16,7 @@ app = Flask(__name__)
 
 # ==================== KONFIGURASI CORS ====================
 # HANYA SATU deklarasi CORS
-CORS(app, resources={r"/api/*": {"origins": "*"}}, supports_credentials=True)
+CORS(app, origins=["https://gdb-frontend-zeta.vercel.app"], supports_credentials=True)
 
 # ==================== KONFIGURASI DATABASE ====================
 # Gunakan environment variable untuk production, fallback ke local
@@ -1074,6 +1074,13 @@ def init_database():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
+    
+@app.after_request
+def after_request(response):
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+    return response
     
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
