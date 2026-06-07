@@ -550,8 +550,8 @@ def get_all_transaksi():
             'tanggal': t.tanggal.strftime('%Y-%m-%d'),
             'keterangan': t.keterangan,
             'bukti_file': t.bukti_file,
-            'status': t.status_validasi  # ← Valid/Pending
-            'status_validasi': t.status_validasi # ← TAMBAHKAN INI
+            'status': t.status_validasi,  # ← Valid/Pending
+            'status_validasi': t.status_validasi
         })
     return jsonify({'status': 'success', 'data': result})
 
