@@ -573,7 +573,7 @@ def create_transaksi():
             file.save(filepath)
             bukti_file = filename
     
-    new_transaksi = Transaksi(
+        new_transaksi = Transaksi(
         id_program=id_program,
         id_pengguna=id_pengguna,
         jenis=jenis,
@@ -584,6 +584,18 @@ def create_transaksi():
         status_validasi='Valid' if status == 'Selesai' else 'Pending'
     )
     db.session.add(new_transaksi)
+    db.session.flush()  # ← DAPATKAN ID TRANSAKSI
+    
+    # Jika Pending, buat pengajuan ke Ketua
+    if status != 'Selesai':
+        pengajuan = PengajuanTransaksi(
+            id_transaksi=new_transaksi.id_transaksi,
+            id_pengguna=id_pengguna,
+            status='Menunggu',
+            alasan='Menunggu konfirmasi Ketua - Transaksi tanpa bukti'
+        )
+        db.session.add(pengajuan)
+    
     db.session.commit()
     
     return jsonify({'status': 'success', 'message': 'Transaksi berhasil', 'id': new_transaksi.id_transaksi})
