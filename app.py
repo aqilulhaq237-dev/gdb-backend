@@ -592,7 +592,7 @@ def create_transaksi():
             id_transaksi=new_transaksi.id_transaksi,
             id_pengguna=int(id_pengguna) if id_pengguna else 1,
             status='Menunggu',
-            alasan='Transaksi tanpa bukti - Menunggu konfirmasi Ketua'
+            alasan=keterangan if keterangan else 'Transaksi tanpa bukti - Menunggu konfirmasi Ketua'
         )
         db.session.add(pengajuan)
     
@@ -1104,12 +1104,13 @@ def setujui_pengajuan(id_pengajuan):
     pengajuan.status = 'Disetujui'
     pengajuan.approved_at = datetime.utcnow()
     
+    # Update status transaksi menjadi Valid
     transaksi = Transaksi.query.get(pengajuan.id_transaksi)
     if transaksi:
         transaksi.status_validasi = 'Valid'
     
     db.session.commit()
-    return jsonify({'status': 'success', 'message': 'Pengajuan disetujui'})
+    return jsonify({'status': 'success', 'message': 'Pengajuan disetujui', 'id_transaksi': pengajuan.id_transaksi})
 
 
 @app.route('/api/pengajuan/<int:id_pengajuan>/tolak', methods=['POST'])
