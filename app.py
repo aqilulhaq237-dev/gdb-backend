@@ -551,6 +551,7 @@ def get_all_transaksi():
             'keterangan': t.keterangan,
             'bukti_file': t.bukti_file,
             'status': t.status_validasi  # ← Valid/Pending
+            'status_validasi': t.status_validasi # ← TAMBAHKAN INI
         })
     return jsonify({'status': 'success', 'data': result})
 
@@ -670,11 +671,13 @@ def get_pengajuan_menunggu_list():
         if transaksi:
             program = ProgramKerja.query.get(transaksi.id_program)
             pengaju = User.query.get(p.id_pengguna)
+            kategori = KategoriProgram.query.get(transaksi.id_kategori)
             result.append({
                 'id_pengajuan': p.id_pengajuan,
                 'id_transaksi': p.id_transaksi,
-                'nama_program': program.nama_program if program else '-',
-                'nama_pengaju': pengaju.nama_lengkap if pengaju else '-',
+                'nama_program': program.nama_program if program else 'Tidak Diketahui',
+                'nama_pengaju': pengaju.nama_lengkap if pengaju else 'Tidak Diketahui',
+                'kategori': kategori.nama_kategori if kategori else 'Umum',
                 'jenis': transaksi.jenis,
                 'nominal': float(transaksi.nominal),
                 'tanggal': transaksi.tanggal.strftime('%Y-%m-%d'),
