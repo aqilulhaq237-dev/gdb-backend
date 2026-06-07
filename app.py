@@ -573,7 +573,7 @@ def create_transaksi():
             file.save(filepath)
             bukti_file = filename
     
-        new_transaksi = Transaksi(
+    new_transaksi = Transaksi(
         id_program=id_program,
         id_pengguna=id_pengguna,
         jenis=jenis,
@@ -584,15 +584,15 @@ def create_transaksi():
         status_validasi='Valid' if status == 'Selesai' else 'Pending'
     )
     db.session.add(new_transaksi)
-    db.session.flush()  # ← DAPATKAN ID TRANSAKSI
+    db.session.flush()
     
-    # Jika Pending, buat pengajuan ke Ketua
+    # Jika Pending, buat pengajuan
     if status != 'Selesai':
         pengajuan = PengajuanTransaksi(
             id_transaksi=new_transaksi.id_transaksi,
-            id_pengguna=id_pengguna,
+            id_pengguna=int(id_pengguna) if id_pengguna else 1,
             status='Menunggu',
-            alasan='Menunggu konfirmasi Ketua - Transaksi tanpa bukti'
+            alasan='Transaksi tanpa bukti - Menunggu konfirmasi Ketua'
         )
         db.session.add(pengajuan)
     
@@ -631,6 +631,12 @@ def delete_transaksi(id_transaksi):
     transaksi = Transaksi.query.get(id_transaksi)
     if not transaksi:
         return jsonify({'status': 'error', 'message': 'Transaksi tidak ditemukan'}), 404
+    
+    # Hapus pengajuan terkait dulu
+    pengajuan = PengajuanTransaksi.query.filter_by(id_transaksi=id_transaksi).first()
+    if pengajuan:
+        db.session.delete(pengajuan)
+    
     db.session.delete(transaksi)
     db.session.commit()
     return jsonify({'status': 'success', 'message': 'Transaksi dihapus'})
@@ -1086,7 +1092,41 @@ def init_database():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
-        
+
+# ==================== ENDPOINT SETUJUI/TOLAK PENGAJUAN ====================
+
+@app.route('/api/pengajuan/<int:id_pengajuan>/setujui', methods=['POST'])
+def setujui_pengajuan(id_pengajuan):
+    pengajuan = PengajuanTransaksi.query.get(id_pengajuan)
+    if not pengajuan:
+        return jsonify({'status': 'error', 'message': 'Pengajuan tidak ditemukan'}), 404
+    
+    pengajuan.status = 'Disetujui'
+    pengajuan.approved_at = datetime.utcnow()
+    
+    transaksi = Transaksi.query.get(pengajuan.id_transaksi)
+    if transaksi:
+        transaksi.status_validasi = 'Valid'
+    
+    db.session.commit()
+    return jsonify({'status': 'success', 'message': 'Pengajuan disetujui'})
+
+
+@app.route('/api/pengajuan/<int:id_pengajuan>/tolak', methods=['POST'])
+def tolak_pengajuan(id_pengajuan):
+    data = request.get_json() or {}
+    catatan = data.get('catatan', '')
+    
+    pengajuan = PengajuanTransaksi.query.get(id_pengajuan)
+    if not pengajuan:
+        return jsonify({'status': 'error', 'message': 'Pengajuan tidak ditemukan'}), 404
+    
+    pengajuan.status = 'Ditolak'
+    pengajuan.catatan_penolakan = catatan
+    pengajuan.approved_at = datetime.utcnow()
+    
+    db.session.commit()
+    return jsonify({'status': 'success', 'message': 'Pengajuan ditolak'})        
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
     with app.app_context():
