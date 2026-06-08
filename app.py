@@ -1129,7 +1129,7 @@ def tolak_pengajuan(id_pengajuan):
     pengajuan.catatan_penolakan = catatan
     pengajuan.approved_at = datetime.utcnow()
     
-    # Ubah status transaksi jadi Tidak Valid
+    # UBAH STATUS TRANSAKSI
     transaksi = Transaksi.query.get(pengajuan.id_transaksi)
     if transaksi:
         transaksi.status_validasi = 'Tidak Valid'
