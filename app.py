@@ -4,11 +4,6 @@ from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
 import os
 from werkzeug.utils import secure_filename
-from reportlab.lib.pagesizes import A4
-from reportlab.lib import colors
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-from reportlab.lib.units import cm
 import io
 from flask import send_file
 
@@ -759,91 +754,6 @@ def get_laporan_keuangan(id_program):
             'transaksi': transaksi_data
         }
     })
-
-# ==================== ENDPOINT CETAK PDF ====================
-
-@app.route('/api/laporan-pdf/<int:id_program>', methods=['GET'])
-def generate_laporan_pdf(id_program):
-    program = ProgramKerja.query.get(id_program)
-    if not program:
-        return jsonify({'status': 'error', 'message': 'Program tidak ditemukan'}), 404
-    
-    transaksi_list = Transaksi.query.filter_by(id_program=id_program).order_by(Transaksi.tanggal).all()
-    total_masuk = sum([t.nominal for t in transaksi_list if t.jenis == 'Masuk' and t.status_validasi == 'Valid'])
-    total_keluar = sum([t.nominal for t in transaksi_list if t.jenis == 'Keluar' and t.status_validasi == 'Valid'])
-    sisa = float(total_masuk) - float(total_keluar)
-    
-    rab_list = RabDinamis.query.filter_by(id_program=id_program).all()
-    total_anggaran = sum([r.biaya_maksimal for r in rab_list])
-    total_realisasi = sum([r.realisasi for r in rab_list])
-    persentase = (float(total_realisasi) / float(total_anggaran) * 100) if float(total_anggaran) > 0 else 0
-    
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, rightMargin=2*cm, leftMargin=2*cm, topMargin=2*cm, bottomMargin=2*cm)
-    styles = getSampleStyleSheet()
-    title_style = ParagraphStyle('TitleStyle', parent=styles['Title'], alignment=1, fontSize=16, textColor=colors.HexColor('#1976D2'))
-    normal_style = styles['Normal']
-    
-    story = []
-    story.append(Paragraph("LAPORAN KEUANGAN PROGRAM KERJA", title_style))
-    story.append(Spacer(1, 0.5*cm))
-    story.append(Paragraph(f"{program.nama_program}", title_style))
-    story.append(Spacer(1, 0.5*cm))
-    story.append(Paragraph(f"Periode: {program.periode or 'Semua'}", normal_style))
-    story.append(Spacer(1, 1*cm))
-    
-    ringkasan_data = [
-        ['Total Pemasukan', f"Rp {float(total_masuk):,.0f}"],
-        ['Total Pengeluaran', f"Rp {float(total_keluar):,.0f}"],
-        ['Sisa Saldo', f"Rp {sisa:,.0f}"],
-        ['Realisasi Anggaran', f"{persentase:.1f}%"],
-    ]
-    
-    ringkasan_table = Table(ringkasan_data, colWidths=[5*cm, 5*cm])
-    ringkasan_table.setStyle(TableStyle([
-        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-        ('FONTSIZE', (0, 0), (-1, -1), 11),
-        ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-        ('BACKGROUND', (0, 0), (0, -1), colors.lightgrey),
-        ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
-    ]))
-    story.append(ringkasan_table)
-    story.append(Spacer(1, 1*cm))
-    
-    if transaksi_list:
-        story.append(Paragraph("Daftar Transaksi", styles['Heading2']))
-        story.append(Spacer(1, 0.5*cm))
-        transaksi_data = [['Tanggal', 'Keterangan', 'Jenis', 'Nominal', 'Status']]
-        for t in transaksi_list:
-            if t.status_validasi == 'Valid':
-                transaksi_data.append([
-                    t.tanggal.strftime('%d/%m/%Y'),
-                    t.keterangan[:40] if t.keterangan else '-',
-                    t.jenis,
-                    f"Rp {float(t.nominal):,.0f}",
-                    t.status_validasi
-                ])
-        transaksi_table = Table(transaksi_data, colWidths=[3*cm, 5*cm, 2.5*cm, 3.5*cm, 2.5*cm])
-        transaksi_table.setStyle(TableStyle([
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 0), (-1, -1), 9),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1976D2')),
-            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('ALIGN', (3, 1), (3, -1), 'RIGHT'),
-        ]))
-        story.append(transaksi_table)
-    else:
-        story.append(Paragraph("Tidak ada transaksi", normal_style))
-    
-    story.append(Spacer(1, 1.5*cm))
-    story.append(Paragraph(f"Dicetak pada: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", normal_style))
-    
-    doc.build(story)
-    buffer.seek(0)
-    
-    return send_file(buffer, as_attachment=True, download_name=f"laporan_{program.nama_program}.pdf", mimetype='application/pdf')
 
 # ==================== ENDPOINT PERIODE ====================
 
