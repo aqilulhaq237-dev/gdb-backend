@@ -5,7 +5,7 @@ from datetime import datetime
 import os
 from werkzeug.utils import secure_filename
 import io
-from flask import send_file
+from flask import send_file, send_from_directory
 
 app = Flask(__name__)
 
@@ -43,7 +43,7 @@ class User(db.Model):
     nama_lengkap = db.Column(db.String(100), nullable=False)
     email = db.Column(db.String(100), unique=True, nullable=False)
     no_hp = db.Column(db.String(20))
-    foto = db.Column(db.String(255))  # ← Tambah kolom foto
+    foto = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     deleted_at = db.Column(db.DateTime, nullable=True)
 
@@ -51,7 +51,7 @@ class PeriodeAktif(db.Model):
     __tablename__ = 'periode_aktif'
     id_periode = db.Column(db.Integer, primary_key=True)
     nama_periode = db.Column(db.String(20), nullable=False)
-    tahun = db.Column(db.String(20), nullable=False)  # ← Ubah ke String
+    tahun = db.Column(db.String(20), nullable=False)
     status_periode = db.Column(db.Enum('Aktif', 'Nonaktif'), default='Nonaktif')
 
 class KategoriProgram(db.Model):
@@ -144,6 +144,12 @@ class LogAktivitas(db.Model):
 def health():
     return jsonify({'status': 'success', 'message': 'Backend running!'})
 
+# ==================== ENDPOINT AKSES FILE UPLOAD ====================
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 # ==================== ENDPOINT LOGIN ====================
 
 @app.route('/api/login', methods=['POST'])
@@ -152,7 +158,7 @@ def login():
     username = data.get('username')
     password = data.get('password')
     
-    user = User.query.filter_by(username=username, deleted_at=None).first()  # ← Cek deleted_at
+    user = User.query.filter_by(username=username, deleted_at=None).first()
     
     if not user:
         return jsonify({'status': 'error', 'message': 'Username tidak ditemukan'}), 401
@@ -545,7 +551,7 @@ def get_all_transaksi():
             'tanggal': t.tanggal.strftime('%Y-%m-%d'),
             'keterangan': t.keterangan,
             'bukti_file': t.bukti_file,
-            'status': t.status_validasi,  # ← Valid/Pending
+            'status': t.status_validasi,
             'status_validasi': t.status_validasi
         })
     return jsonify({'status': 'success', 'data': result})
@@ -582,7 +588,6 @@ def create_transaksi():
     db.session.add(new_transaksi)
     db.session.flush()
     
-    # Jika Pending, buat pengajuan
     if status != 'Selesai':
         pengajuan = PengajuanTransaksi(
             id_transaksi=new_transaksi.id_transaksi,
@@ -628,7 +633,6 @@ def delete_transaksi(id_transaksi):
     if not transaksi:
         return jsonify({'status': 'error', 'message': 'Transaksi tidak ditemukan'}), 404
     
-    # Hapus pengajuan terkait dulu
     pengajuan = PengajuanTransaksi.query.filter_by(id_transaksi=id_transaksi).first()
     if pengajuan:
         db.session.delete(pengajuan)
@@ -713,7 +717,8 @@ def get_laporan_keuangan(id_program):
     if not program:
         return jsonify({'status': 'error', 'message': 'Program tidak ditemukan'}), 404
 
-    transaksi_list = Transaksi.query.filter_by(id_program=id_program, status_validasi='Valid').order_by(Transaksi.tanggal).all()
+    # Ambil SEMUA transaksi untuk program ini (tanpa filter status)
+    transaksi_list = Transaksi.query.filter_by(id_program=id_program).order_by(Transaksi.tanggal).all()
     total_masuk = sum(t.nominal for t in transaksi_list if t.jenis == 'Masuk')
     total_keluar = sum(t.nominal for t in transaksi_list if t.jenis == 'Keluar')
     sisa = float(total_masuk) - float(total_keluar)
@@ -964,13 +969,10 @@ def get_riwayat_pagination():
 @app.route('/api/init-db', methods=['GET'])
 def init_database():
     try:
-        # Buat semua tabel
         db.create_all()
         
-        # Cek apakah user admin sudah ada
         admin = User.query.filter_by(username='admin').first()
         if not admin:
-            # Insert user default
             users = [
                 User(username='admin', password='admin123', role='Admin', nama_lengkap='Administrator', email='admin@gdb.com'),
                 User(username='ketua', password='ketua123', role='Ketua', nama_lengkap='Ketua GDB', email='ketua@gdb.com'),
@@ -981,7 +983,6 @@ def init_database():
                 db.session.add(u)
             db.session.commit()
         
-        # Cek katalog biaya
         katalog = KatalogBiaya.query.first()
         if not katalog:
             biaya_list = [
@@ -1017,7 +1018,6 @@ def setujui_pengajuan(id_pengajuan):
     pengajuan.status = 'Disetujui'
     pengajuan.approved_at = datetime.utcnow()
     
-    # Update status transaksi menjadi Valid
     transaksi = Transaksi.query.get(pengajuan.id_transaksi)
     if transaksi:
         transaksi.status_validasi = 'Valid'
@@ -1039,19 +1039,12 @@ def tolak_pengajuan(id_pengajuan):
     pengajuan.catatan_penolakan = catatan
     pengajuan.approved_at = datetime.utcnow()
     
-    # UBAH STATUS TRANSAKSI
     transaksi = Transaksi.query.get(pengajuan.id_transaksi)
     if transaksi:
         transaksi.status_validasi = 'Tidak Valid'
     
     db.session.commit()
     return jsonify({'status': 'success', 'message': 'Pengajuan ditolak'})
-
-# ==================== ENDPOINT AKSES FILE UPLOAD ====================
-
-@app.route('/uploads/<filename>')
-def uploaded_file(filename):
-    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
 
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
