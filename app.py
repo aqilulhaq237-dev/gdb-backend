@@ -672,7 +672,7 @@ def get_pengajuan_menunggu_list():
                 'id_transaksi': p.id_transaksi,
                 'nama_program': program.nama_program if program else 'Tidak Diketahui',
                 'nama_pengaju': pengaju.nama_lengkap if pengaju else 'Tidak Diketahui',
-                'kategori': kategori.nama_kategori if kategori else 'Umum',
+                'kategori': kategori.nama_kategori if kategori else 'Pengeluaran',
                 'jenis': transaksi.jenis,
                 'nominal': float(transaksi.nominal),
                 'tanggal': transaksi.tanggal.strftime('%Y-%m-%d'),
@@ -1045,7 +1045,14 @@ def tolak_pengajuan(id_pengajuan):
         transaksi.status_validasi = 'Tidak Valid'
     
     db.session.commit()
-    return jsonify({'status': 'success', 'message': 'Pengajuan ditolak'})        
+    return jsonify({'status': 'success', 'message': 'Pengajuan ditolak'})
+
+# ==================== ENDPOINT AKSES FILE UPLOAD ====================
+
+@app.route('/uploads/<filename>')
+def uploaded_file(filename):
+    return send_from_directory(app.config['UPLOAD_FOLDER'], filename)
+
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
     with app.app_context():
