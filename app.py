@@ -435,23 +435,30 @@ def get_dashboard_stats():
     periode_aktif = PeriodeAktif.query.filter_by(status_periode='Aktif').all()
     tahun_aktif = [str(p.tahun) for p in periode_aktif]
     
+    # Hitung semua transaksi (Valid + Pending)
     total_pemasukan = db.session.query(db.func.sum(Transaksi.nominal)).filter(
-        Transaksi.jenis == 'Masuk', Transaksi.status_validasi == 'Valid'
+        Transaksi.jenis == 'Masuk',
+        Transaksi.status_validasi.in_(['Valid', 'Pending'])
     ).scalar() or 0
     
     total_pengeluaran = db.session.query(db.func.sum(Transaksi.nominal)).filter(
-        Transaksi.jenis == 'Keluar', Transaksi.status_validasi == 'Valid'
+        Transaksi.jenis == 'Keluar',
+        Transaksi.status_validasi.in_(['Valid', 'Pending'])
     ).scalar() or 0
     
     sisa_saldo = float(total_pemasukan) - float(total_pengeluaran)
     
+    # Hitung program aktif
     if tahun_aktif:
         program_aktif = ProgramKerja.query.filter(
             ProgramKerja.status_program == 'Berjalan',
             ProgramKerja.periode.in_(tahun_aktif)
         ).count()
     else:
-        program_aktif = 0
+        # Jika tidak ada periode aktif, hitung semua yang Berjalan
+        program_aktif = ProgramKerja.query.filter_by(status_program='Berjalan').count()
+    
+    total_program = ProgramKerja.query.count()
     
     return jsonify({
         'status': 'success',
@@ -460,6 +467,7 @@ def get_dashboard_stats():
             'total_pengeluaran': float(total_pengeluaran),
             'sisa_saldo': sisa_saldo,
             'program_aktif': program_aktif,
+            'total_program': total_program,
             'periode_aktif': tahun_aktif
         }
     })
@@ -483,7 +491,7 @@ def get_kategori():
 
 @app.route('/api/katalog-biaya', methods=['GET'])
 def get_all_katalog_biaya():
-    katalog = KatalogBiaya.query.all()
+    katalog = KatalogBiaya.query.order_by(KatalogBiaya.nama_biaya.asc()).all()
     result = []
     for k in katalog:
         result.append({
@@ -534,7 +542,17 @@ def delete_katalog_biaya(id_biaya):
 
 @app.route('/api/transaksi', methods=['GET'])
 def get_all_transaksi():
-    transaksi = Transaksi.query.order_by(Transaksi.tanggal.desc()).all()
+    # Parameter filter role
+    role = request.args.get('role', None)
+    hide_selesai = request.args.get('hide_selesai', 'false').lower() == 'true'
+    
+    if hide_selesai:
+        # Ambil ID program yang Selesai
+        program_selesai_ids = [p.id_program for p in ProgramKerja.query.filter_by(status_program='Selesai').all()]
+        transaksi = Transaksi.query.filter(~Transaksi.id_program.in_(program_selesai_ids)).order_by(Transaksi.tanggal.desc()).all()
+    else:
+        transaksi = Transaksi.query.order_by(Transaksi.tanggal.desc()).all()
+    
     result = []
     for t in transaksi:
         program = ProgramKerja.query.get(t.id_program)
@@ -552,7 +570,8 @@ def get_all_transaksi():
             'keterangan': t.keterangan,
             'bukti_file': t.bukti_file,
             'status': t.status_validasi,
-            'status_validasi': t.status_validasi
+            'status_validasi': t.status_validasi,
+            'status_program': program.status_program if program else None
         })
     return jsonify({'status': 'success', 'data': result})
 
@@ -862,13 +881,15 @@ def get_all_rab():
     rab_list = RAB.query.all()
     result = []
     for r in rab_list:
+        program = ProgramKerja.query.get(r.id_program)
         result.append({
             'id_rab': r.id_rab,
             'id_program': r.id_program,
             'nama_item': r.nama_item,
             'jumlah': int(r.jumlah),
             'harga_satuan': float(r.harga_satuan),
-            'keterangan': r.keterangan
+            'keterangan': r.keterangan,
+            'status_program': program.status_program if program else None
         })
     return jsonify({'status': 'success', 'data': result})
 
