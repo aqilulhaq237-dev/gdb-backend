@@ -487,6 +487,38 @@ def get_kategori():
         })
     return jsonify({'status': 'success', 'data': result})
 
+@app.route('/api/kategori', methods=['POST'])
+def create_kategori():
+    data = request.get_json()
+    new_kategori = KategoriProgram(
+        nama_kategori=data['nama_kategori'],
+        deskripsi_kategori=data.get('deskripsi_kategori', ''),
+        status=data.get('status', 'Aktif')
+    )
+    db.session.add(new_kategori)
+    db.session.commit()
+    return jsonify({'status': 'success', 'message': 'Kategori berhasil ditambahkan'})
+
+@app.route('/api/kategori/<int:id_kategori>', methods=['PUT'])
+def update_kategori(id_kategori):
+    kategori = KategoriProgram.query.get(id_kategori)
+    if not kategori:
+        return jsonify({'status': 'error', 'message': 'Kategori tidak ditemukan'}), 404
+    data = request.get_json()
+    kategori.nama_kategori = data.get('nama_kategori', kategori.nama_kategori)
+    kategori.deskripsi_kategori = data.get('deskripsi_kategori', kategori.deskripsi_kategori)
+    kategori.status = data.get('status', kategori.status)
+    db.session.commit()
+    return jsonify({'status': 'success', 'message': 'Kategori berhasil diupdate'})
+
+@app.route('/api/kategori/<int:id_kategori>', methods=['DELETE'])
+def delete_kategori(id_kategori):
+    kategori = KategoriProgram.query.get(id_kategori)
+    if not kategori:
+        return jsonify({'status': 'error', 'message': 'Kategori tidak ditemukan'}), 404
+    db.session.delete(kategori)
+    db.session.commit()
+    return jsonify({'status': 'success', 'message': 'Kategori berhasil dihapus'})
 # ==================== ENDPOINT KATALOG BIAYA ====================
 
 @app.route('/api/katalog-biaya', methods=['GET'])
