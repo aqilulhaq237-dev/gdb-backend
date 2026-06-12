@@ -1171,15 +1171,18 @@ def delete_rab(id_rab):
     if not rab:
         return jsonify({'status': 'error', 'message': 'RAB tidak ditemukan'}), 404
     
-    data = request.get_json() or {}
+    data = request.get_json(silent=True) or {}
     id_pengguna = data.get('id_pengguna', 1)
     nama_item = rab.nama_item
     
     db.session.delete(rab)
     db.session.commit()
     
-    # ✅ Log
-    catat_log(id_pengguna, 'Hapus', f'Menghapus item RAB: {nama_item}')
+    # Log tanpa id_pengguna jika tidak ada
+    try:
+        catat_log(id_pengguna, 'Hapus', f'Menghapus item RAB: {nama_item}')
+    except:
+        pass
     
     return jsonify({'status': 'success', 'message': 'RAB dihapus'})
 
