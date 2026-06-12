@@ -10,18 +10,15 @@ from flask import send_file, send_from_directory
 app = Flask(__name__)
 
 # ==================== KONFIGURASI CORS ====================
-# HANYA SATU deklarasi CORS
 CORS(app)
 
 # ==================== KONFIGURASI DATABASE ====================
-# Gunakan environment variable untuk production, fallback ke local
 DATABASE_URL = os.environ.get('DATABASE_URL', 'mysql+pymysql://root:@localhost/gdb_cash_db')
 app.config['SQLALCHEMY_DATABASE_URI'] = DATABASE_URL
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['MAX_CONTENT_LENGTH'] = 500 * 1024
 
-# Buat folder uploads jika belum ada
 if not os.path.exists(app.config['UPLOAD_FOLDER']):
     os.makedirs(app.config['UPLOAD_FOLDER'])
 
@@ -138,6 +135,22 @@ class LogAktivitas(db.Model):
     ip_address = db.Column(db.String(45))
     waktu = db.Column(db.DateTime, default=datetime.utcnow)
 
+# ==================== HELPER: CATAT LOG ====================
+
+def catat_log(id_pengguna, aktivitas, deskripsi):
+    """Helper untuk mencatat log aktivitas"""
+    try:
+        log_entry = LogAktivitas(
+            id_pengguna=id_pengguna,
+            aktivitas=aktivitas,
+            deskripsi=deskripsi,
+            ip_address=request.remote_addr
+        )
+        db.session.add(log_entry)
+        db.session.commit()
+    except Exception as e:
+        print(f"Gagal mencatat log: {e}")
+
 # ==================== ENDPOINT HEALTH ====================
 
 @app.route('/api/health', methods=['GET'])
@@ -166,14 +179,8 @@ def login():
     if user.password != password:
         return jsonify({'status': 'error', 'message': 'Password salah'}), 401
     
-    log_entry = LogAktivitas(
-        id_pengguna=user.id_user,
-        aktivitas='Login',
-        deskripsi=f'User {user.username} berhasil login',
-        ip_address=request.remote_addr
-    )
-    db.session.add(log_entry)
-    db.session.commit()
+    # ✅ Catat log login
+    catat_log(user.id_user, 'Login', f'User {user.username} berhasil login')
     
     return jsonify({
         'status': 'success',
@@ -187,6 +194,20 @@ def login():
             'no_hp': user.no_hp
         }
     })
+
+# ==================== ENDPOINT LOGOUT ====================
+
+@app.route('/api/logout', methods=['POST'])
+def logout():
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna')
+    
+    if id_pengguna:
+        user = User.query.get(id_pengguna)
+        if user:
+            catat_log(id_pengguna, 'Logout', f'User {user.username} logout')
+    
+    return jsonify({'status': 'success', 'message': 'Logout berhasil'})
 
 # ==================== ENDPOINT LOGS (PAGINATION) ====================
 
@@ -247,15 +268,22 @@ def get_all_program_kerja():
 @app.route('/api/program-kerja', methods=['POST'])
 def create_program_kerja():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     new_program = ProgramKerja(
         nama_program=data['nama_program'],
         deskripsi_program=data.get('deskripsi_program', ''),
         periode=data.get('periode', ''),
         kategori=data.get('kategori', ''),
-        status_program=data.get('status', 'Rencana')
+        status_program=data.get('status', 'Rencana'),
+        created_by=id_pengguna
     )
     db.session.add(new_program)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Tambah', f'Menambah program kerja: {data["nama_program"]}')
+    
     return jsonify({'status': 'success', 'message': 'Program kerja berhasil ditambahkan'})
 
 @app.route('/api/program-kerja/<int:id_program>', methods=['PUT'])
@@ -265,12 +293,23 @@ def update_program_kerja(id_program):
         return jsonify({'status': 'error', 'message': 'Program tidak ditemukan'}), 404
     
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    nama_lama = program.nama_program
+    status_lama = program.status_program
+    
     program.nama_program = data.get('nama_program', program.nama_program)
     program.deskripsi_program = data.get('deskripsi_program', program.deskripsi_program)
     program.periode = data.get('periode', program.periode)
     program.kategori = data.get('kategori', program.kategori)
     program.status_program = data.get('status', program.status_program)
     db.session.commit()
+    
+    # ✅ Log
+    if data.get('status') and data['status'] != status_lama:
+        catat_log(id_pengguna, 'Ubah', f'Mengubah status program "{nama_lama}" dari {status_lama} menjadi {data["status"]}')
+    else:
+        catat_log(id_pengguna, 'Ubah', f'Mengedit program kerja: {nama_lama}')
+    
     return jsonify({'status': 'success', 'message': 'Program kerja berhasil diupdate'})
 
 # ==================== ENDPOINT RAB DINAMIS ====================
@@ -296,6 +335,8 @@ def get_all_rab_dinamis():
 @app.route('/api/rab-dinamis', methods=['POST'])
 def create_rab_dinamis():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     new_rab = RabDinamis(
         id_program=data['id_program'],
         nama_biaya=data['nama_biaya'],
@@ -306,6 +347,10 @@ def create_rab_dinamis():
     )
     db.session.add(new_rab)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Tambah', f'Menambah RAB dinamis: {data["nama_biaya"]}')
+    
     return jsonify({'status': 'success', 'message': 'Item RAB berhasil ditambahkan'})
 
 @app.route('/api/rab-dinamis/<int:id_rab>', methods=['PUT'])
@@ -314,12 +359,18 @@ def update_rab_dinamis(id_rab):
     if not rab:
         return jsonify({'status': 'error', 'message': 'Item RAB tidak ditemukan'}), 404
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     rab.nama_biaya = data.get('nama_biaya', rab.nama_biaya)
     rab.biaya_minimal = data.get('biaya_minimal', rab.biaya_minimal)
     rab.biaya_maksimal = data.get('biaya_maksimal', rab.biaya_maksimal)
     rab.realisasi = data.get('realisasi', rab.realisasi)
     rab.sisa = data.get('sisa', rab.sisa)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mengedit RAB dinamis: {rab.nama_biaya}')
+    
     return jsonify({'status': 'success', 'message': 'Item RAB berhasil diupdate'})
 
 @app.route('/api/rab-dinamis/<int:id_rab>', methods=['DELETE'])
@@ -327,8 +378,17 @@ def delete_rab_dinamis(id_rab):
     rab = RabDinamis.query.get(id_rab)
     if not rab:
         return jsonify({'status': 'error', 'message': 'Item RAB tidak ditemukan'}), 404
+    
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    nama_biaya = rab.nama_biaya
+    
     db.session.delete(rab)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Hapus', f'Menghapus RAB dinamis: {nama_biaya}')
+    
     return jsonify({'status': 'success', 'message': 'Item RAB berhasil dihapus'})
 
 # ==================== ENDPOINT USERS ====================
@@ -351,6 +411,8 @@ def get_all_users():
 @app.route('/api/users', methods=['POST'])
 def create_user():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     existing = User.query.filter_by(username=data['username']).first()
     if existing:
         return jsonify({'status': 'error', 'message': 'Username sudah digunakan'}), 400
@@ -364,6 +426,10 @@ def create_user():
     )
     db.session.add(new_user)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Tambah', f'Menambah user: {data["nama_lengkap"]} ({data["role"]})')
+    
     return jsonify({'status': 'success', 'message': 'User berhasil ditambahkan'})
 
 @app.route('/api/users/<int:id_user>', methods=['PUT'])
@@ -373,6 +439,8 @@ def update_user(id_user):
         return jsonify({'status': 'error', 'message': 'User tidak ditemukan'}), 404
     
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     user.nama_lengkap = data.get('nama_lengkap', user.nama_lengkap)
     user.email = data.get('email', user.email)
     user.role = data.get('role', user.role)
@@ -380,6 +448,10 @@ def update_user(id_user):
         user.password = data['password']
     
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mengedit user: {user.nama_lengkap}')
+    
     return jsonify({'status': 'success', 'message': 'User berhasil diupdate'})
 
 @app.route('/api/users/<int:id_user>/reset-password', methods=['POST'])
@@ -387,8 +459,16 @@ def reset_password_user(id_user):
     user = User.query.get(id_user)
     if not user:
         return jsonify({'status': 'error', 'message': 'User tidak ditemukan'}), 404
+    
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    
     user.password = 'password123'
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mereset password user: {user.nama_lengkap}')
+    
     return jsonify({'status': 'success', 'message': 'Password direset menjadi password123'})
 
 @app.route('/api/users/<int:id_user>', methods=['DELETE'])
@@ -399,8 +479,16 @@ def delete_user(id_user):
     if user.username == 'admin':
         return jsonify({'status': 'error', 'message': 'Tidak dapat menghapus admin'}), 400
     
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    nama_user = user.nama_lengkap
+    
     user.deleted_at = datetime.utcnow()
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Hapus', f'Menonaktifkan user: {nama_user}')
+    
     return jsonify({'status': 'success', 'message': 'User berhasil dinonaktifkan'})
 
 @app.route('/api/users/<int:id_user>/restore', methods=['POST'])
@@ -408,8 +496,16 @@ def restore_user(id_user):
     user = User.query.get(id_user)
     if not user:
         return jsonify({'status': 'error', 'message': 'User tidak ditemukan'}), 404
+    
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    
     user.deleted_at = None
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mengaktifkan kembali user: {user.nama_lengkap}')
+    
     return jsonify({'status': 'success', 'message': 'User diaktifkan kembali'})
 
 @app.route('/api/users/<int:id_user>/upload-photo', methods=['POST'])
@@ -425,6 +521,11 @@ def upload_user_photo(id_user):
         if user:
             user.foto = filename
             db.session.commit()
+            
+            # ✅ Log
+            id_pengguna = request.form.get('id_pengguna', id_user)
+            catat_log(int(id_pengguna), 'Ubah', f'Mengupload foto profil user: {user.nama_lengkap}')
+            
         return jsonify({'status': 'success', 'filename': filename})
     return jsonify({'status': 'error', 'message': 'File tidak diizinkan'}), 400
 
@@ -435,7 +536,6 @@ def get_dashboard_stats():
     periode_aktif = PeriodeAktif.query.filter_by(status_periode='Aktif').all()
     tahun_aktif = [str(p.tahun) for p in periode_aktif]
     
-    # Hitung semua transaksi (Valid + Pending)
     total_pemasukan = db.session.query(db.func.sum(Transaksi.nominal)).filter(
         Transaksi.jenis == 'Masuk',
         Transaksi.status_validasi.in_(['Valid', 'Pending'])
@@ -448,14 +548,12 @@ def get_dashboard_stats():
     
     sisa_saldo = float(total_pemasukan) - float(total_pengeluaran)
     
-    # Hitung program aktif
     if tahun_aktif:
         program_aktif = ProgramKerja.query.filter(
             ProgramKerja.status_program == 'Berjalan',
             ProgramKerja.periode.in_(tahun_aktif)
         ).count()
     else:
-        # Jika tidak ada periode aktif, hitung semua yang Berjalan
         program_aktif = ProgramKerja.query.filter_by(status_program='Berjalan').count()
     
     total_program = ProgramKerja.query.count()
@@ -490,6 +588,8 @@ def get_kategori():
 @app.route('/api/kategori', methods=['POST'])
 def create_kategori():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     new_kategori = KategoriProgram(
         nama_kategori=data['nama_kategori'],
         deskripsi_kategori=data.get('deskripsi_kategori', ''),
@@ -497,6 +597,10 @@ def create_kategori():
     )
     db.session.add(new_kategori)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Tambah', f'Menambah kategori: {data["nama_kategori"]}')
+    
     return jsonify({'status': 'success', 'message': 'Kategori berhasil ditambahkan'})
 
 @app.route('/api/kategori/<int:id_kategori>', methods=['PUT'])
@@ -505,10 +609,16 @@ def update_kategori(id_kategori):
     if not kategori:
         return jsonify({'status': 'error', 'message': 'Kategori tidak ditemukan'}), 404
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     kategori.nama_kategori = data.get('nama_kategori', kategori.nama_kategori)
     kategori.deskripsi_kategori = data.get('deskripsi_kategori', kategori.deskripsi_kategori)
     kategori.status = data.get('status', kategori.status)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mengedit kategori: {kategori.nama_kategori}')
+    
     return jsonify({'status': 'success', 'message': 'Kategori berhasil diupdate'})
 
 @app.route('/api/kategori/<int:id_kategori>', methods=['DELETE'])
@@ -516,9 +626,19 @@ def delete_kategori(id_kategori):
     kategori = KategoriProgram.query.get(id_kategori)
     if not kategori:
         return jsonify({'status': 'error', 'message': 'Kategori tidak ditemukan'}), 404
+    
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    nama_kategori = kategori.nama_kategori
+    
     db.session.delete(kategori)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Hapus', f'Menghapus kategori: {nama_kategori}')
+    
     return jsonify({'status': 'success', 'message': 'Kategori berhasil dihapus'})
+
 # ==================== ENDPOINT KATALOG BIAYA ====================
 
 @app.route('/api/katalog-biaya', methods=['GET'])
@@ -538,6 +658,8 @@ def get_all_katalog_biaya():
 @app.route('/api/katalog-biaya', methods=['POST'])
 def create_katalog_biaya():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     new_biaya = KatalogBiaya(
         nama_biaya=data['nama_biaya'],
         biaya_minimal=data.get('biaya_minimal', 0),
@@ -546,6 +668,10 @@ def create_katalog_biaya():
     )
     db.session.add(new_biaya)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Tambah', f'Menambah katalog biaya: {data["nama_biaya"]}')
+    
     return jsonify({'status': 'success', 'message': 'Biaya berhasil ditambahkan'})
 
 @app.route('/api/katalog-biaya/<int:id_biaya>', methods=['PUT'])
@@ -554,11 +680,17 @@ def update_katalog_biaya(id_biaya):
     if not biaya:
         return jsonify({'status': 'error', 'message': 'Biaya tidak ditemukan'}), 404
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     biaya.nama_biaya = data.get('nama_biaya', biaya.nama_biaya)
     biaya.biaya_minimal = data.get('biaya_minimal', biaya.biaya_minimal)
     biaya.biaya_maksimal = data.get('biaya_maksimal', biaya.biaya_maksimal)
     biaya.deskripsi_biaya = data.get('deskripsi_biaya', biaya.deskripsi_biaya)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mengedit katalog biaya: {biaya.nama_biaya}')
+    
     return jsonify({'status': 'success', 'message': 'Biaya berhasil diupdate'})
 
 @app.route('/api/katalog-biaya/<int:id_biaya>', methods=['DELETE'])
@@ -566,20 +698,27 @@ def delete_katalog_biaya(id_biaya):
     biaya = KatalogBiaya.query.get(id_biaya)
     if not biaya:
         return jsonify({'status': 'error', 'message': 'Biaya tidak ditemukan'}), 404
+    
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    nama_biaya = biaya.nama_biaya
+    
     db.session.delete(biaya)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Hapus', f'Menghapus katalog biaya: {nama_biaya}')
+    
     return jsonify({'status': 'success', 'message': 'Biaya berhasil dihapus'})
 
 # ==================== ENDPOINT TRANSAKSI ====================
 
 @app.route('/api/transaksi', methods=['GET'])
 def get_all_transaksi():
-    # Parameter filter role
     role = request.args.get('role', None)
     hide_selesai = request.args.get('hide_selesai', 'false').lower() == 'true'
     
     if hide_selesai:
-        # Ambil ID program yang Selesai
         program_selesai_ids = [p.id_program for p in ProgramKerja.query.filter_by(status_program='Selesai').all()]
         transaksi = Transaksi.query.filter(~Transaksi.id_program.in_(program_selesai_ids)).order_by(Transaksi.tanggal.desc()).all()
     else:
@@ -650,6 +789,14 @@ def create_transaksi():
     
     db.session.commit()
     
+    # ✅ Log
+    user = User.query.get(int(id_pengguna)) if id_pengguna else None
+    program = ProgramKerja.query.get(int(id_program)) if id_program else None
+    nama_user = user.nama_lengkap if user else 'Unknown'
+    nama_program = program.nama_program if program else '-'
+    catat_log(int(id_pengguna) if id_pengguna else 1, 'Transaksi', 
+              f'{nama_user} menambah transaksi {jenis} Rp {float(nominal):,.0f} untuk program {nama_program}')
+    
     return jsonify({'status': 'success', 'message': 'Transaksi berhasil', 'id': new_transaksi.id_transaksi})
 
 @app.route('/api/transaksi/<int:id_transaksi>', methods=['PUT'])
@@ -658,6 +805,7 @@ def update_transaksi(id_transaksi):
     if not transaksi:
         return jsonify({'status': 'error', 'message': 'Transaksi tidak ditemukan'}), 404
     data = request.form.to_dict() if request.form else request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
     
     transaksi.id_program = data.get('id_program', transaksi.id_program)
     transaksi.jenis = data.get('jenis', transaksi.jenis)
@@ -676,6 +824,10 @@ def update_transaksi(id_transaksi):
             transaksi.bukti_file = filename
     
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(int(id_pengguna), 'Ubah', f'Mengedit transaksi #{id_transaksi}')
+    
     return jsonify({'status': 'success', 'message': 'Transaksi diupdate'})
 
 @app.route('/api/transaksi/<int:id_transaksi>', methods=['DELETE'])
@@ -684,12 +836,19 @@ def delete_transaksi(id_transaksi):
     if not transaksi:
         return jsonify({'status': 'error', 'message': 'Transaksi tidak ditemukan'}), 404
     
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    
     pengajuan = PengajuanTransaksi.query.filter_by(id_transaksi=id_transaksi).first()
     if pengajuan:
         db.session.delete(pengajuan)
     
     db.session.delete(transaksi)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(int(id_pengguna), 'Hapus', f'Menghapus transaksi #{id_transaksi}')
+    
     return jsonify({'status': 'success', 'message': 'Transaksi dihapus'})
 
 # ==================== ENDPOINT PROGRAM SELESAI ====================
@@ -743,6 +902,7 @@ def proses_konfirmasi_pengajuan(id_pengajuan):
     data = request.get_json()
     status = data.get('status')
     catatan = data.get('catatan', '')
+    id_pengguna = data.get('id_pengguna', 1)
     
     pengajuan = PengajuanTransaksi.query.get(id_pengajuan)
     if not pengajuan:
@@ -751,6 +911,7 @@ def proses_konfirmasi_pengajuan(id_pengajuan):
     pengajuan.status = status
     pengajuan.catatan_penolakan = catatan if status == 'Ditolak' else None
     pengajuan.approved_at = datetime.utcnow()
+    pengajuan.approved_by = id_pengguna
     
     if status == 'Disetujui':
         transaksi = Transaksi.query.get(pengajuan.id_transaksi)
@@ -758,6 +919,13 @@ def proses_konfirmasi_pengajuan(id_pengajuan):
             transaksi.status_validasi = 'Valid'
     
     db.session.commit()
+    
+    # ✅ Log
+    if status == 'Disetujui':
+        catat_log(int(id_pengguna), 'Konfirmasi', f'Menyetujui pengajuan transaksi #{pengajuan.id_transaksi}')
+    else:
+        catat_log(int(id_pengguna), 'Tolak', f'Menolak pengajuan transaksi #{pengajuan.id_transaksi}: {catatan}')
+    
     return jsonify({'status': 'success', 'message': f'Pengajuan {status}'})
 
 # ==================== ENDPOINT LAPORAN KEUANGAN ====================
@@ -768,7 +936,6 @@ def get_laporan_keuangan(id_program):
     if not program:
         return jsonify({'status': 'error', 'message': 'Program tidak ditemukan'}), 404
 
-    # Ambil SEMUA transaksi untuk program ini (tanpa filter status)
     transaksi_list = Transaksi.query.filter_by(id_program=id_program).order_by(Transaksi.tanggal).all()
     total_masuk = sum(t.nominal for t in transaksi_list if t.jenis == 'Masuk')
     total_keluar = sum(t.nominal for t in transaksi_list if t.jenis == 'Keluar')
@@ -828,6 +995,7 @@ def get_periode_aktif_status():
 @app.route('/api/periode-aktif', methods=['POST'])
 def save_periode_aktif_status():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
     current_year = datetime.now().year
     next_year = current_year + 1
     
@@ -846,6 +1014,10 @@ def save_periode_aktif_status():
         db.session.add(PeriodeAktif(nama_periode='Tahun Depan', tahun=str(next_year), status_periode='Aktif' if data.get('tahun_depan') else 'Nonaktif'))
     
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', 'Mengubah pengaturan periode aktif')
+    
     return jsonify({'status': 'success', 'message': 'Periode aktif disimpan'})
 
 @app.route('/api/periode/tahun-list', methods=['GET'])
@@ -867,6 +1039,7 @@ def get_tahun_list():
 @app.route('/api/periode/tahun', methods=['POST'])
 def tambah_tahun():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
     tahun = data.get('tahun', '').strip()
     if not tahun:
         return jsonify({'status': 'error', 'message': 'Tahun tidak boleh kosong'}), 400
@@ -874,14 +1047,25 @@ def tambah_tahun():
     if not existing:
         db.session.add(PeriodeAktif(nama_periode=f'Periode {tahun}', tahun=tahun, status_periode='Nonaktif'))
         db.session.commit()
+        
+        # ✅ Log
+        catat_log(id_pengguna, 'Tambah', f'Menambah tahun periode: {tahun}')
+        
     return jsonify({'status': 'success', 'message': 'Tahun ditambahkan'})
 
 @app.route('/api/periode/tahun/<path:tahun>', methods=['DELETE'])
 def hapus_tahun(tahun):
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    
     periode = PeriodeAktif.query.filter_by(tahun=tahun).first()
     if periode:
         db.session.delete(periode)
         db.session.commit()
+        
+        # ✅ Log
+        catat_log(id_pengguna, 'Hapus', f'Menghapus tahun periode: {tahun}')
+        
     return jsonify({'status': 'success', 'message': 'Tahun dihapus'})
 
 @app.route('/api/periode/aktif', methods=['GET'])
@@ -893,6 +1077,7 @@ def get_periode_aktif_list():
 @app.route('/api/periode/aktif', methods=['POST'])
 def set_periode_aktif():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
     tahun_list = data.get('tahun_list', [])
     if len(tahun_list) > 2:
         return jsonify({'status': 'error', 'message': 'Maksimal 2 periode aktif'}), 400
@@ -904,6 +1089,10 @@ def set_periode_aktif():
         else:
             db.session.add(PeriodeAktif(nama_periode=f'Periode {tahun}', tahun=tahun, status_periode='Aktif'))
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mengatur periode aktif: {", ".join(tahun_list) if tahun_list else "tidak ada"}')
+    
     return jsonify({'status': 'success', 'message': 'Periode aktif disimpan', 'data': tahun_list})
 
 # ==================== ENDPOINT RAB ====================
@@ -939,6 +1128,8 @@ def get_rab_by_id(id_rab):
 @app.route('/api/rab', methods=['POST'])
 def create_rab():
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     if not data.get('id_program') or not data.get('nama_item'):
         return jsonify({'status': 'error', 'message': 'Data tidak lengkap'}), 400
     new_rab = RAB(
@@ -948,6 +1139,10 @@ def create_rab():
     )
     db.session.add(new_rab)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Tambah', f'Menambah item RAB: {data["nama_item"]}')
+    
     return jsonify({'status': 'success', 'message': 'RAB ditambahkan'}), 201
 
 @app.route('/api/rab/<int:id_rab>', methods=['PUT'])
@@ -956,12 +1151,18 @@ def update_rab(id_rab):
     if not rab:
         return jsonify({'status': 'error', 'message': 'RAB tidak ditemukan'}), 404
     data = request.get_json()
+    id_pengguna = data.get('id_pengguna', 1)
+    
     rab.nama_item = data.get('nama_item', rab.nama_item)
     rab.jumlah = data.get('jumlah', rab.jumlah)
     rab.harga_satuan = data.get('harga_satuan', rab.harga_satuan)
     rab.keterangan = data.get('keterangan', rab.keterangan)
     rab.updated_at = datetime.utcnow()
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Ubah', f'Mengedit item RAB: {rab.nama_item}')
+    
     return jsonify({'status': 'success', 'message': 'RAB diupdate'})
 
 @app.route('/api/rab/<int:id_rab>', methods=['DELETE'])
@@ -969,8 +1170,17 @@ def delete_rab(id_rab):
     rab = RAB.query.get(id_rab)
     if not rab:
         return jsonify({'status': 'error', 'message': 'RAB tidak ditemukan'}), 404
+    
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    nama_item = rab.nama_item
+    
     db.session.delete(rab)
     db.session.commit()
+    
+    # ✅ Log
+    catat_log(id_pengguna, 'Hapus', f'Menghapus item RAB: {nama_item}')
+    
     return jsonify({'status': 'success', 'message': 'RAB dihapus'})
 
 @app.route('/api/rab/program/<int:id_program>', methods=['GET'])
@@ -1017,6 +1227,59 @@ def get_riwayat_pagination():
     
     return jsonify({'status': 'success', 'data': result, 'total': total, 'total_pages': total_pages, 'current_page': page})
 
+# ==================== ENDPOINT SETUJUI/TOLAK PENGAJUAN ====================
+
+@app.route('/api/pengajuan/<int:id_pengajuan>/setujui', methods=['POST'])
+def setujui_pengajuan(id_pengajuan):
+    data = request.get_json() or {}
+    id_pengguna = data.get('id_pengguna', 1)
+    
+    pengajuan = PengajuanTransaksi.query.get(id_pengajuan)
+    if not pengajuan:
+        return jsonify({'status': 'error', 'message': 'Pengajuan tidak ditemukan'}), 404
+    
+    pengajuan.status = 'Disetujui'
+    pengajuan.approved_at = datetime.utcnow()
+    pengajuan.approved_by = id_pengguna
+    
+    transaksi = Transaksi.query.get(pengajuan.id_transaksi)
+    if transaksi:
+        transaksi.status_validasi = 'Valid'
+    
+    db.session.commit()
+    
+    # ✅ Log
+    catat_log(int(id_pengguna), 'Konfirmasi', f'Menyetujui transaksi #{pengajuan.id_transaksi}')
+    
+    return jsonify({'status': 'success', 'message': 'Pengajuan disetujui', 'id_transaksi': pengajuan.id_transaksi})
+
+
+@app.route('/api/pengajuan/<int:id_pengajuan>/tolak', methods=['POST'])
+def tolak_pengajuan(id_pengajuan):
+    data = request.get_json() or {}
+    catatan = data.get('catatan', '')
+    id_pengguna = data.get('id_pengguna', 1)
+    
+    pengajuan = PengajuanTransaksi.query.get(id_pengajuan)
+    if not pengajuan:
+        return jsonify({'status': 'error', 'message': 'Pengajuan tidak ditemukan'}), 404
+    
+    pengajuan.status = 'Ditolak'
+    pengajuan.catatan_penolakan = catatan
+    pengajuan.approved_at = datetime.utcnow()
+    pengajuan.approved_by = id_pengguna
+    
+    transaksi = Transaksi.query.get(pengajuan.id_transaksi)
+    if transaksi:
+        transaksi.status_validasi = 'Tidak Valid'
+    
+    db.session.commit()
+    
+    # ✅ Log
+    catat_log(int(id_pengguna), 'Tolak', f'Menolak transaksi #{pengajuan.id_transaksi}: {catatan}' if catatan else f'Menolak transaksi #{pengajuan.id_transaksi}')
+    
+    return jsonify({'status': 'success', 'message': 'Pengajuan ditolak'})
+
 # ==================== ENDPOINT INIT DATABASE ====================
 
 @app.route('/api/init-db', methods=['GET'])
@@ -1059,45 +1322,6 @@ def init_database():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
-# ==================== ENDPOINT SETUJUI/TOLAK PENGAJUAN ====================
-
-@app.route('/api/pengajuan/<int:id_pengajuan>/setujui', methods=['POST'])
-def setujui_pengajuan(id_pengajuan):
-    pengajuan = PengajuanTransaksi.query.get(id_pengajuan)
-    if not pengajuan:
-        return jsonify({'status': 'error', 'message': 'Pengajuan tidak ditemukan'}), 404
-    
-    pengajuan.status = 'Disetujui'
-    pengajuan.approved_at = datetime.utcnow()
-    
-    transaksi = Transaksi.query.get(pengajuan.id_transaksi)
-    if transaksi:
-        transaksi.status_validasi = 'Valid'
-    
-    db.session.commit()
-    return jsonify({'status': 'success', 'message': 'Pengajuan disetujui', 'id_transaksi': pengajuan.id_transaksi})
-
-
-@app.route('/api/pengajuan/<int:id_pengajuan>/tolak', methods=['POST'])
-def tolak_pengajuan(id_pengajuan):
-    data = request.get_json() or {}
-    catatan = data.get('catatan', '')
-    
-    pengajuan = PengajuanTransaksi.query.get(id_pengajuan)
-    if not pengajuan:
-        return jsonify({'status': 'error', 'message': 'Pengajuan tidak ditemukan'}), 404
-    
-    pengajuan.status = 'Ditolak'
-    pengajuan.catatan_penolakan = catatan
-    pengajuan.approved_at = datetime.utcnow()
-    
-    transaksi = Transaksi.query.get(pengajuan.id_transaksi)
-    if transaksi:
-        transaksi.status_validasi = 'Tidak Valid'
-    
-    db.session.commit()
-    return jsonify({'status': 'success', 'message': 'Pengajuan ditolak'})
 
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
