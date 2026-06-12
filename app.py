@@ -1295,6 +1295,15 @@ def init_database():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/check-uploads', methods=['GET'])
+def check_uploads():
+    upload_path = app.config['UPLOAD_FOLDER']
+    if os.path.exists(upload_path):
+        files = os.listdir(upload_path)
+        return jsonify({'status': 'success', 'files': files, 'count': len(files)})
+    else:
+        return jsonify({'status': 'error', 'message': 'Folder uploads tidak ditemukan'})
+
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
     with app.app_context():
