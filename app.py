@@ -241,6 +241,17 @@ def get_logs():
         'current_page': page
     })
 
+# ==================== ENDPOINT CHECK UPLOADS ====================
+
+@app.route('/api/check-uploads', methods=['GET'])
+def check_uploads():
+    upload_path = app.config['UPLOAD_FOLDER']
+    if os.path.exists(upload_path):
+        files = os.listdir(upload_path)
+        return jsonify({'status': 'success', 'files': files, 'count': len(files)})
+    else:
+        return jsonify({'status': 'error', 'message': 'Folder uploads tidak ditemukan'})
+
 # ==================== ENDPOINT PROGRAM KERJA ====================
 
 @app.route('/api/program-kerja', methods=['GET'])
@@ -375,13 +386,13 @@ def delete_rab_dinamis(id_rab):
     if not rab:
         return jsonify({'status': 'error', 'message': 'Item RAB tidak ditemukan'}), 404
     
-    id_pengguna = data.get('id_pengguna', 1)
+    id_pengguna = data.get('id_pengguna', request.args.get('id_pengguna', 1))
     nama_biaya = rab.nama_biaya
     
     db.session.delete(rab)
     db.session.commit()
     
-    catat_log(id_pengguna, 'Hapus', f'Menghapus RAB dinamis: {nama_biaya}')
+    catat_log(int(id_pengguna), 'Hapus', f'Menghapus RAB dinamis: {nama_biaya}')
     
     return jsonify({'status': 'success', 'message': 'Item RAB berhasil dihapus'})
 
@@ -471,13 +482,13 @@ def delete_user(id_user):
         return jsonify({'status': 'error', 'message': 'Tidak dapat menghapus admin'}), 400
     
     data = request.get_json(silent=True) or {}
-    id_pengguna = data.get('id_pengguna', 1)
+    id_pengguna = data.get('id_pengguna', request.args.get('id_pengguna', 1))
     nama_user = user.nama_lengkap
     
     user.deleted_at = datetime.utcnow()
     db.session.commit()
     
-    catat_log(id_pengguna, 'Hapus', f'Menonaktifkan user: {nama_user}')
+    catat_log(int(id_pengguna), 'Hapus', f'Menonaktifkan user: {nama_user}')
     
     return jsonify({'status': 'success', 'message': 'User berhasil dinonaktifkan'})
 
@@ -614,13 +625,13 @@ def delete_kategori(id_kategori):
     if not kategori:
         return jsonify({'status': 'error', 'message': 'Kategori tidak ditemukan'}), 404
     
-    id_pengguna = data.get('id_pengguna', 1)
+    id_pengguna = data.get('id_pengguna', request.args.get('id_pengguna', 1))
     nama_kategori = kategori.nama_kategori
     
     db.session.delete(kategori)
     db.session.commit()
     
-    catat_log(id_pengguna, 'Hapus', f'Menghapus kategori: {nama_kategori}')
+    catat_log(int(id_pengguna), 'Hapus', f'Menghapus kategori: {nama_kategori}')
     
     return jsonify({'status': 'success', 'message': 'Kategori berhasil dihapus'})
 
@@ -683,13 +694,13 @@ def delete_katalog_biaya(id_biaya):
     if not biaya:
         return jsonify({'status': 'error', 'message': 'Biaya tidak ditemukan'}), 404
     
-    id_pengguna = data.get('id_pengguna', 1)
+    id_pengguna = data.get('id_pengguna', request.args.get('id_pengguna', 1))
     nama_biaya = biaya.nama_biaya
     
     db.session.delete(biaya)
     db.session.commit()
     
-    catat_log(id_pengguna, 'Hapus', f'Menghapus katalog biaya: {nama_biaya}')
+    catat_log(int(id_pengguna), 'Hapus', f'Menghapus katalog biaya: {nama_biaya}')
     
     return jsonify({'status': 'success', 'message': 'Biaya berhasil dihapus'})
 
@@ -817,7 +828,7 @@ def delete_transaksi(id_transaksi):
     if not transaksi:
         return jsonify({'status': 'error', 'message': 'Transaksi tidak ditemukan'}), 404
     
-    id_pengguna = data.get('id_pengguna', 1)
+    id_pengguna = data.get('id_pengguna', request.args.get('id_pengguna', 1))
     
     pengajuan = PengajuanTransaksi.query.filter_by(id_transaksi=id_transaksi).first()
     if pengajuan:
@@ -1032,14 +1043,14 @@ def tambah_tahun():
 @app.route('/api/periode/tahun/<path:tahun>', methods=['DELETE'])
 def hapus_tahun(tahun):
     data = request.get_json(silent=True) or {}
-    id_pengguna = data.get('id_pengguna', 1)
+    id_pengguna = data.get('id_pengguna', request.args.get('id_pengguna', 1))
     
     periode = PeriodeAktif.query.filter_by(tahun=tahun).first()
     if periode:
         db.session.delete(periode)
         db.session.commit()
         
-        catat_log(id_pengguna, 'Hapus', f'Menghapus tahun periode: {tahun}')
+        catat_log(int(id_pengguna), 'Hapus', f'Menghapus tahun periode: {tahun}')
         
     return jsonify({'status': 'success', 'message': 'Tahun dihapus'})
 
@@ -1144,14 +1155,14 @@ def delete_rab(id_rab):
     if not rab:
         return jsonify({'status': 'error', 'message': 'RAB tidak ditemukan'}), 404
     
-    id_pengguna = data.get('id_pengguna', 1)
+    id_pengguna = data.get('id_pengguna', request.args.get('id_pengguna', 1))
     nama_item = rab.nama_item
     
     db.session.delete(rab)
     db.session.commit()
     
     try:
-        catat_log(id_pengguna, 'Hapus', f'Menghapus item RAB: {nama_item}')
+        catat_log(int(id_pengguna), 'Hapus', f'Menghapus item RAB: {nama_item}')
     except:
         pass
     
@@ -1294,15 +1305,6 @@ def init_database():
         })
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 500
-
-@app.route('/api/check-uploads', methods=['GET'])
-def check_uploads():
-    upload_path = app.config['UPLOAD_FOLDER']
-    if os.path.exists(upload_path):
-        files = os.listdir(upload_path)
-        return jsonify({'status': 'success', 'files': files, 'count': len(files)})
-    else:
-        return jsonify({'status': 'error', 'message': 'Folder uploads tidak ditemukan'})
 
 # ==================== RUN SERVER ====================
 if __name__ == '__main__':
