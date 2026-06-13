@@ -817,6 +817,22 @@ def update_transaksi(id_transaksi):
     
     db.session.commit()
     
+    # ✅ Jika status jadi Pending, buat pengajuan baru
+    if transaksi.status_validasi == 'Pending':
+        old_pengajuan = PengajuanTransaksi.query.filter_by(id_transaksi=id_transaksi).first()
+        if old_pengajuan:
+            db.session.delete(old_pengajuan)
+            db.session.commit()
+        
+        new_pengajuan = PengajuanTransaksi(
+            id_transaksi=id_transaksi,
+            id_pengguna=int(id_pengguna),
+            status='Menunggu',
+            alasan='Transaksi diedit - Menunggu konfirmasi ulang Ketua'
+        )
+        db.session.add(new_pengajuan)
+        db.session.commit()
+    
     catat_log(int(id_pengguna), 'Ubah', f'Mengedit transaksi #{id_transaksi}')
     
     return jsonify({'status': 'success', 'message': 'Transaksi diupdate'})
