@@ -946,10 +946,21 @@ def get_laporan_keuangan(id_program):
     total_keluar = sum(t.nominal for t in transaksi_list if t.jenis == 'Keluar')
     sisa = float(total_masuk) - float(total_keluar)
 
+    # ✅ Realisasi = total transaksi KELUAR
+    total_realisasi = float(total_keluar)
+
+    # ✅ Total anggaran dari RAB Dinamis
     rab_list = RabDinamis.query.filter_by(id_program=id_program).all()
-    total_anggaran = sum(r.biaya_maksimal for r in rab_list)
-    total_realisasi = sum(r.realisasi for r in rab_list)
-    persentase = (float(total_realisasi) / float(total_anggaran) * 100) if float(total_anggaran) > 0 else 0
+    total_anggaran = sum(float(r.biaya_maksimal) for r in rab_list) if rab_list else 0
+
+    # ✅ Jika tidak ada, hitung dari tabel RAB
+    if total_anggaran == 0:
+        rab_items = RAB.query.filter_by(id_program=id_program).all()
+        total_anggaran = sum(float(r.harga_satuan) for r in rab_items) if rab_items else 0
+
+    # ✅ Hitung persentase
+    persentase = (total_realisasi / total_anggaran * 100) if total_anggaran > 0 else 0
+
 
     transaksi_data = []
     for t in transaksi_list:
